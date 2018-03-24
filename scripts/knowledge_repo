@@ -94,7 +94,7 @@ if args.update:
         kr = knowledge_repo.KnowledgeRepository.for_uri(args.repo)
         if isinstance(kr, GitKnowledgeRepository):
             kr.update(branch=args.knowledge_branch)
-    except:
+    except git.InvalidGitRepositoryError:
         pass
 
 # If not running in dev mode, and the specified repo exists, along with a knowledge_repo
@@ -103,11 +103,26 @@ if args.update:
 # action to be run by this script in any case. Instances of this script in a data repo
 # are assumed to be in the: '.resources/scripts/knowledge_repo', and be part of a checked
 # out instance of the complete "knowledge-repo" repository.
-if (isinstance(args.repo, str) and not args.dev
-        and os.path.exists(os.path.join(args.repo, '.resources', 'scripts', 'knowledge_repo'))
-        and os.path.abspath(args.repo) != os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))):
+if not args.dev and kr.config.required_tooling_version:
+    required_version = kr.config.required_tooling_version
     cmdline_args = ['--noupdate'] + [arg.replace(' ', '\ ') if ' ' in arg else arg for arg in sys.argv[1:]]
-    sys.exit(subprocess.call('{} {}'.format(os.path.join(os.path.abspath(args.repo), '.resources/scripts/knowledge_repo'), ' '.join(cmdline_args)), shell=True))
+    if required_version.startswith('!'):  # Specific revision requested
+        from knowledge_repo.utils.git import clone_kr_to_directory, CheckedOutRevision
+        clone_kr_to_directory('~/.knowledge_repo/git')
+        with CheckedOutRevision('~/.knowledge_repo/git', required_version[1:]) as script_path:
+            sys.exit(
+                subprocess.call(
+                    '{} {}'.format(os.path.join(script_path, 'scripts/knowledge_repo'), ' '.join(cmdline_args)
+                ), shell=True)
+            )
+    else:
+        from knowledge_repo.utils.dependencies import check_dependencies
+        check_dependencies([
+            'knowledge_repo{}{}'.format(
+                '==' if required_version[0] not in ['<', '=', '>'] else '',
+                required_version
+            )
+        ])
 
 # ---------------------------------------------------------------------------------------
 # Everything below this line pertains to actual actions to be performed on the repository
